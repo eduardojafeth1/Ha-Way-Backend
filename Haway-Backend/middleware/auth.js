@@ -11,7 +11,8 @@ module.exports = (req, res, next) => {
 
   try {
     const verified = jwt.verify(token, process.env.JWT_SECRET || 'secreto_temporal');
-    req.usuario = verified; // Guarda id y rol en la petición
+    // verified contiene { id_usuario, rol }
+    req.usuario = verified; 
     next();
   } catch (err) {
     res.status(403).json({ error: 'Token inválido o expirado.' });
