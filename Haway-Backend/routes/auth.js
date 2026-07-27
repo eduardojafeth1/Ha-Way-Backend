@@ -2,19 +2,20 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const { uploadCliente } = require('../middleware/upload');
 
 /**
  * @openapi
  * /auth/register:
  *   post:
- *     summary: Registrar un nuevo usuario (Cliente o Conductor)
+ *     summary: Registrar un nuevo usuario (Exclusivo Cliente con foto de perfil)
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
- *             required: [nombre, apellido, correo, password, telefono, rol]
+ *             required: [nombre, apellido, correo, password, telefono]
  *             properties:
  *               nombre:
  *                 type: string
@@ -35,27 +36,10 @@ const authController = require('../controllers/authController');
  *               telefono:
  *                 type: string
  *                 example: "99990000"
- *               rol:
+ *               foto_perfil:
  *                 type: string
- *                 enum: [CLIENTE, CONDUCTOR]
- *                 example: CLIENTE
- *               foto:
- *                 type: string
- *                 description: URL de la foto de perfil
- *                 example: "https://example.com/foto.jpg"
- *               numero_licencia:
- *                 type: string
- *                 description: Requerido solo para CONDUCTOR
- *                 example: "HN-12345-A"
- *               fecha_vencimiento:
- *                 type: string
- *                 format: date
- *                 description: Requerido solo para CONDUCTOR (YYYY-MM-DD)
- *                 example: "2030-12-31"
- *               identidad:
- *                 type: string
- *                 description: Requerido solo para CONDUCTOR (número único)
- *                 example: "0801-1990-12345"
+ *                 format: binary
+ *                 description: Archivo de foto de perfil (Imagen opcional)
  *     responses:
  *       201:
  *         description: Usuario registrado exitosamente.
@@ -90,7 +74,7 @@ const authController = require('../controllers/authController');
  *       500:
  *         description: Error interno del servidor.
  */
-router.post('/register', authController.register);
+router.post('/register', uploadCliente, authController.register);
 
 /**
  * @openapi

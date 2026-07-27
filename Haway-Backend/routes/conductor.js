@@ -3,8 +3,127 @@ const express = require('express');
 const router = express.Router();
 const conductorController = require('../controllers/conductorController');
 const verificarAuth = require('../middleware/auth');
+const { uploadConductor } = require('../middleware/upload');
 
-// Middleware para verificar que el usuario sea CONDUCTOR
+/**
+ * @openapi
+ * /conductor/registro:
+ *   post:
+ *     summary: Registrar un nuevo conductor con sus documentos y camión (3 pasos)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: 
+ *               - nombre
+ *               - apellido
+ *               - correo
+ *               - password
+ *               - telefono
+ *               - numero_licencia
+ *               - fecha_vencimiento
+ *               - identidad
+ *               - placa
+ *               - capacidad_galones
+ *               - cv
+ *               - licencia
+ *               - foto_perfil
+ *               - foto_revision
+ *               - foto_camion
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 example: Juan
+ *               apellido:
+ *                 type: string
+ *                 example: Perez
+ *               correo:
+ *                 type: string
+ *                 example: juan.perez@example.com
+ *               password:
+ *                 type: string
+ *                 example: "123456"
+ *               contrasena:
+ *                 type: string
+ *                 description: Equivalente a password por compatibilidad
+ *                 example: "123456"
+ *               telefono:
+ *                 type: string
+ *                 example: "99887766"
+ *               numero_licencia:
+ *                 type: string
+ *                 example: "LIC-123456"
+ *               fecha_vencimiento:
+ *                 type: string
+ *                 format: date
+ *                 example: "2030-12-31"
+ *               identidad:
+ *                 type: string
+ *                 example: "0801199512345"
+ *               nombre_empresa:
+ *                 type: string
+ *                 example: "Transportes Perez S.A."
+ *               rtn:
+ *                 type: string
+ *                 example: "08011995123450"
+ *               motivo_solicitud:
+ *                 type: string
+ *                 example: "Deseo unirme a la red de transporte de agua de Ha'Way."
+ *               placa:
+ *                 type: string
+ *                 example: "AAB1234"
+ *               marca:
+ *                 type: string
+ *                 example: "Hino"
+ *               modelo:
+ *                 type: string
+ *                 example: "500 Series"
+ *               anio:
+ *                 type: integer
+ *                 example: 2018
+ *               capacidad_galones:
+ *                 type: integer
+ *                 example: 5000
+ *               color:
+ *                 type: string
+ *                 example: "Blanco"
+ *               revision_tecnica:
+ *                 type: string
+ *                 format: date
+ *                 example: "2025-06-30"
+ *               cv:
+ *                 type: string
+ *                 format: binary
+ *                 description: Currículum Vitae (PDF o Imagen)
+ *               licencia:
+ *                 type: string
+ *                 format: binary
+ *                 description: Foto de Licencia de Conducir (PDF o Imagen)
+ *               foto_perfil:
+ *                 type: string
+ *                 format: binary
+ *                 description: Foto de perfil del conductor (Imagen)
+ *               foto_revision:
+ *                 type: string
+ *                 format: binary
+ *                 description: Foto de revisión técnica (PDF o Imagen)
+ *               foto_camion:
+ *                 type: string
+ *                 format: binary
+ *                 description: Foto del camión cisterna (Imagen)
+ *     responses:
+ *       201:
+ *         description: Conductor y camión registrados exitosamente.
+ *       400:
+ *         description: Faltan campos obligatorios o hay datos duplicados en el sistema (correo, teléfono, identidad, placa).
+ *       500:
+ *         description: Error interno del servidor.
+ */
+router.post('/registro', uploadConductor, conductorController.registrarConductor);
+
+// Middleware para verificar que el usuario sea CONDUCTOR (para las demás rutas)
 const esConductor = (req, res, next) => {
   if (req.usuario && req.usuario.rol === 'CONDUCTOR') {
     return next();

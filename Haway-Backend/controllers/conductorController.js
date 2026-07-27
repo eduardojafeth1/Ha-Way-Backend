@@ -1,5 +1,7 @@
 // controllers/conductorController.js
 const db = require('../db');
+const bcrypt = require('bcryptjs');
+const { uploadToCloudinary } = require('../utils/cloudinary');
 
 // Helper para obtener el id_conductor a partir del id_usuario
 const getConductorId = async (id_usuario) => {
@@ -445,5 +447,222 @@ exports.updatePedidoEstado = async (req, res) => {
     await db.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ error: 'Error interno del servidor al actualizar el estado del pedido.' });
+  }
+};
+
+// =========================================================================
+// REGISTRO COMPLETO DE CONDUCTOR (Paso 1, 2 y 3) con Cloudinary y Transacciones
+// =========================================================================
+exports.registrarConductor = async (req, res) => {
+  // 1. Extraer los datos del cuerpo de la petición
+  const {
+    // Datos de usuario (Paso 1)
+    nombre,
+    apellido,
+    correo,
+    password,
+    contrasena,
+    telefono,
+    
+    // Datos de conductor (Paso 1)
+    numero_licencia,
+    fecha_vencimiento,
+    identidad,
+    nombre_empresa,
+    rtn,
+    motivo_solicitud,
+    
+    // Datos del camión (Paso 3)
+    placa,
+    marca,
+    modelo,
+    anio,
+    capacidad_galones,
+    color,
+    revision_tecnica
+  } = req.body;
+
+  const passwordInput = password || contrasena;
+
+  // 2. Validación de campos de texto obligatorios
+  if (!nombre || !apellido || !correo || !passwordInput || !telefono ||
+      !numero_licencia || !fecha_vencimiento || !identidad ||
+      !placa || !capacidad_galones) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios para el registro del conductor.' });
+  }
+
+  // Validar capacidad_galones como número
+  const capacidadNum = parseInt(capacidad_galones, 10);
+  if (isNaN(capacidadNum) || capacidadNum <= 0) {
+    return res.status(400).json({ error: 'La capacidad en galones debe ser un número entero positivo.' });
+  }
+
+  // Validar año del camión si se envía
+  let anioNum = null;
+  if (anio) {
+    anioNum = parseInt(anio, 10);
+    if (isNaN(anioNum) || anioNum <= 0) {
+      return res.status(400).json({ error: 'El año del camión debe ser un número positivo.' });
+    }
+  }
+
+  // 3. Validación de archivos requeridos (Paso 2)
+  if (!req.files || 
+      !req.files['cv'] || 
+      !req.files['licencia'] || 
+      !req.files['foto_perfil'] || 
+      !req.files['foto_revision'] || 
+      !req.files['foto_camion']) {
+    return res.status(400).json({ 
+      error: 'Se requieren todos los archivos del registro: cv, licencia, foto_perfil, foto_revision, foto_camion.' 
+    });
+  }
+
+  // Variables para almacenar las URLs de Cloudinary
+  let urlFotoPerfil = '';
+  let urlCv = '';
+  let urlLicencia = '';
+  let urlFotoRevision = '';
+  let urlFotoCamion = '';
+
+  try {
+    // 4. Subir archivos a Cloudinary concurrentemente
+    const fileCv = req.files['cv'][0];
+    const fileLicencia = req.files['licencia'][0];
+    const fileFotoPerfil = req.files['foto_perfil'][0];
+    const fileFotoRevision = req.files['foto_revision'][0];
+    const fileFotoCamion = req.files['foto_camion'][0];
+
+    // Subir a Cloudinary organizados por carpetas
+    const [resPerfil, resCv, resLicencia, resRevision, resCamion] = await Promise.all([
+      uploadToCloudinary(fileFotoPerfil.buffer, 'perfiles'),
+      uploadToCloudinary(fileCv.buffer, 'cvs'),
+      uploadToCloudinary(fileLicencia.buffer, 'licencias'),
+      uploadToCloudinary(fileFotoRevision.buffer, 'revisiones'),
+      uploadToCloudinary(fileFotoCamion.buffer, 'camiones')
+    ]);
+
+    urlFotoPerfil = resPerfil.secure_url;
+    urlCv = resCv.secure_url;
+    urlLicencia = resLicencia.secure_url;
+    urlFotoRevision = resRevision.secure_url;
+    urlFotoCamion = resCamion.secure_url;
+
+  } catch (cloudinaryError) {
+    console.error('Error al subir archivos a Cloudinary:', cloudinaryError);
+    return res.status(500).json({ 
+      error: 'Error al subir los documentos a Cloudinary. Por favor, intente de nuevo.' 
+    });
+  }
+
+  // 5. Ejecutar la transacción en PostgreSQL
+  try {
+    // Encriptar contraseña
+    const salt = await bcrypt.genSalt(10);
+    const contrasenaHash = await bcrypt.hash(passwordInput, salt);
+
+    await db.query('BEGIN');
+
+    // a) Tabla usuarios: rol='CONDUCTOR', foto=urlFotoPerfil
+    const userQuery = `
+      INSERT INTO usuarios (rol, nombre, apellido, correo, telefono, password, foto, estado)
+      VALUES ('CONDUCTOR', $1, $2, $3, $4, $5, $6, 'ACTIVO')
+      RETURNING id_usuario;
+    `;
+    const userResult = await db.query(userQuery, [
+      nombre, apellido, correo, telefono, contrasenaHash, urlFotoPerfil
+    ]);
+    const id_usuario = userResult.rows[0].id_usuario;
+
+    // b) Tabla conductores: asociarlo al id_usuario, estado='PENDIENTE'
+    const conductorQuery = `
+      INSERT INTO conductores (
+        id_usuario, numero_licencia, fecha_vencimiento, identidad, disponible, estado, nombre_empresa, rtn, motivo_solicitud
+      )
+      VALUES ($1, $2, $3, $4, FALSE, 'PENDIENTE', $5, $6, $7)
+      RETURNING id_conductor;
+    `;
+    const conductorResult = await db.query(conductorQuery, [
+      id_usuario,
+      numero_licencia,
+      fecha_vencimiento,
+      identidad,
+      nombre_empresa || null,
+      rtn || null,
+      motivo_solicitud || null
+    ]);
+    const id_conductor = conductorResult.rows[0].id_conductor;
+
+    // c) Tabla documentos: insertar un registro por cada documento subido
+    const documentosParaInsertar = [
+      { tipo: 'CV', url: urlCv },
+      { tipo: 'LICENCIA', url: urlLicencia },
+      { tipo: 'REVISION_TECNICA', url: urlFotoRevision },
+      { tipo: 'FOTO_PERFIL', url: urlFotoPerfil },
+      { tipo: 'FOTO_CAMION', url: urlFotoCamion }
+    ];
+
+    const docInsertQuery = `
+      INSERT INTO documentos (id_conductor, tipo, url_archivo, estado)
+      VALUES ($1, $2, $3, 'PENDIENTE');
+    `;
+
+    for (const doc of documentosParaInsertar) {
+      await db.query(docInsertQuery, [id_conductor, doc.tipo, doc.url]);
+    }
+
+    // d) Tabla camiones: asociarlo al id_conductor, foto=urlFotoCamion, estado='ACTIVO'
+    const camionInsertQuery = `
+      INSERT INTO camiones (
+        id_conductor, placa, marca, modelo, anio, capacidad_galones, color, foto, revision_tecnica, estado
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ACTIVO')
+      RETURNING id_camion;
+    `;
+    const camionResult = await db.query(camionInsertQuery, [
+      id_conductor,
+      placa,
+      marca || null,
+      modelo || null,
+      anioNum,
+      capacidadNum,
+      color || null,
+      urlFotoCamion,
+      revision_tecnica || null
+    ]);
+
+    await db.query('COMMIT');
+
+    // Retornar éxito
+    res.status(201).json({
+      message: 'Conductor y camión registrados exitosamente. Sus documentos están en revisión.',
+      usuarioId: id_usuario,
+      conductorId: id_conductor,
+      camionId: camionResult.rows[0].id_camion
+    });
+
+  } catch (dbError) {
+    // Si falla cualquier paso de base de datos, hacemos rollback para no dejar basura
+    await db.query('ROLLBACK');
+    console.error('Error en la transacción de base de datos:', dbError);
+    
+    // Devolver un error amigable en caso de violación de restricción única
+    let errorMessage = 'Error al registrar la información en la base de datos.';
+    if (dbError.code === '23505') { 
+      if (dbError.constraint === 'usuarios_correo_key') {
+        errorMessage = 'El correo electrónico ya está registrado.';
+      } else if (dbError.constraint === 'usuarios_telefono_key') {
+        errorMessage = 'El número de teléfono ya está registrado.';
+      } else if (dbError.constraint === 'conductores_identidad_key') {
+        errorMessage = 'El número de identidad ya está registrado.';
+      } else if (dbError.constraint === 'camiones_placa_key') {
+        errorMessage = 'La placa del camión ya está registrada.';
+      } else {
+        errorMessage = 'Alguno de los identificadores únicos (RTN, Licencia, Identidad o Placa) ya está registrado.';
+      }
+      return res.status(400).json({ error: errorMessage });
+    }
+    
+    res.status(500).json({ error: dbError.message || errorMessage });
   }
 };

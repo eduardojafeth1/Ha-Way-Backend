@@ -2,6 +2,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
+const { uploadToCloudinary } = require('../utils/cloudinary');
 
 // LÓGICA DE REGISTRO
 exports.register = async (req, res) => {
@@ -12,78 +13,66 @@ exports.register = async (req, res) => {
     contrasena, // Soportar contrasena por compatibilidad
     password, 
     telefono, 
-    rol,
-    foto,
-    // Campos específicos de conductor
-    numero_licencia, 
-    fecha_vencimiento, 
-    identidad 
+    foto // URL opcional en texto para compatibilidad
   } = req.body;
 
   const passwordInput = password || contrasena;
 
-  if (!nombre || !apellido || !correo || !passwordInput || !telefono || !rol) {
-    return res.status(400).json({ error: 'Todos los campos obligatorios (nombre, apellido, correo, password, telefono, rol) deben ser completados.' });
+  // 1. Validación de campos obligatorios
+  if (!nombre || !apellido || !correo || !passwordInput || !telefono) {
+    return res.status(400).json({ error: 'Todos los campos obligatorios (nombre, apellido, correo, password, telefono) deben ser completados.' });
   }
 
-  const rolUpper = rol.toUpperCase();
-  if (rolUpper !== 'CLIENTE' && rolUpper !== 'CONDUCTOR') {
-    return res.status(400).json({ error: 'El rol debe ser "CLIENTE" o "CONDUCTOR".' });
+  // 2. Procesar subida de foto de perfil a Cloudinary si existe
+  let urlFotoPerfil = foto || null;
+  if (req.files && req.files['foto_perfil'] && req.files['foto_perfil'][0]) {
+    try {
+      const fileFotoPerfil = req.files['foto_perfil'][0];
+      const resultCloudinary = await uploadToCloudinary(fileFotoPerfil.buffer, 'perfiles');
+      urlFotoPerfil = resultCloudinary.secure_url;
+    } catch (cloudinaryError) {
+      console.error('Error al subir foto de perfil de cliente a Cloudinary:', cloudinaryError);
+      return res.status(500).json({ error: 'Error al subir la foto de perfil a Cloudinary. Por favor intente de nuevo.' });
+    }
   }
 
   try {
-    // Verificar si el correo o el teléfono ya están registrados
-    const existeUsuario = await db.query(
-      'SELECT id_usuario FROM usuarios WHERE correo = $1 OR telefono = $2', 
-      [correo, telefono]
-    );
-    
-    if (existeUsuario.rows.length > 0) {
-      return res.status(400).json({ error: 'El correo o el teléfono ya están registrados.' });
-    }
-
     const salt = await bcrypt.genSalt(10);
     const contrasenaHash = await bcrypt.hash(passwordInput, salt);
 
     await db.query('BEGIN');
 
-    // Insertar en la tabla usuarios
+    // Insertar en la tabla usuarios con rol='CLIENTE'
     const insertarUsuarioQuery = `
       INSERT INTO usuarios (rol, nombre, apellido, correo, telefono, password, foto, estado)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVO')
+      VALUES ('CLIENTE', $1, $2, $3, $4, $5, $6, 'ACTIVO')
       RETURNING id_usuario, rol, nombre, apellido, correo, telefono, foto, estado;
     `;
     
     const nuevoUsuarioResult = await db.query(insertarUsuarioQuery, [
-      rolUpper, nombre, apellido, correo, telefono, contrasenaHash, foto || null
+      nombre, apellido, correo, telefono, contrasenaHash, urlFotoPerfil
     ]);
     
     const nuevoUsuario = nuevoUsuarioResult.rows[0];
-
-    // Si el rol es CONDUCTOR, insertar datos específicos obligatorios
-    if (rolUpper === 'CONDUCTOR') {
-      if (!numero_licencia || !fecha_vencimiento || !identidad) {
-        throw new Error('Los conductores requieren numero_licencia, fecha_vencimiento e identidad.');
-      }
-      
-      const insertarConductorQuery = `
-        INSERT INTO conductores (id_usuario, numero_licencia, fecha_vencimiento, identidad, disponible, estado)
-        VALUES ($1, $2, $3, $4, FALSE, 'PENDIENTE');
-      `;
-      await db.query(insertarConductorQuery, [
-        nuevoUsuario.id_usuario, 
-        numero_licencia, 
-        fecha_vencimiento, 
-        identidad
-      ]);
-    }
 
     await db.query('COMMIT');
     res.status(201).json({ message: 'Usuario registrado exitosamente.', usuario: nuevoUsuario });
 
   } catch (err) {
     await db.query('ROLLBACK');
-    console.error(err);
+    console.error('Error al registrar cliente:', err);
+
+    // Responder de forma clara si hay duplicación de campos únicos (código 23505)
+    if (err.code === '23505') {
+      let errorMessage = 'El correo o el teléfono ya están registrados.';
+      if (err.constraint === 'usuarios_correo_key') {
+        errorMessage = 'El correo electrónico ya está registrado.';
+      } else if (err.constraint === 'usuarios_telefono_key') {
+        errorMessage = 'El número de teléfono ya está registrado.';
+      }
+      return res.status(400).json({ error: errorMessage });
+    }
+
     res.status(500).json({ error: err.message || 'Error interno al registrar el usuario.' });
   }
 };
