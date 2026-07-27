@@ -33,6 +33,55 @@ const verificarAuth = require('../middleware/auth');
  *       200:
  *         description: Perfil actualizado exitosamente.
  */
+/**
+ * @openapi
+ * /users/perfil:
+ *   get:
+ *     summary: Obtener datos del perfil del usuario autenticado
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Datos de perfil obtenidos exitosamente.
+ */
+router.get('/perfil', verificarAuth, async (req, res) => {
+  const { id_usuario, rol } = req.usuario;
+  const rolUpper = rol ? rol.toUpperCase() : '';
+
+  try {
+    let query = '';
+    if (rolUpper === 'CLIENTE') {
+      query = `
+        SELECT u.id_usuario, u.rol, u.nombre, u.apellido, u.correo, u.telefono, u.foto, u.estado,
+               d.direccion AS direccion_predeterminada, d.latitud AS latitud_casa, d.longitud AS longitud_casa
+        FROM usuarios u
+        LEFT JOIN direcciones d ON u.id_usuario = d.id_usuario AND d.principal = TRUE
+        WHERE u.id_usuario = $1
+      `;
+    } else if (rolUpper === 'CONDUCTOR') {
+      query = `
+        SELECT u.id_usuario, u.rol, u.nombre, u.apellido, u.correo, u.telefono, u.foto, u.estado,
+               c.numero_licencia, c.identidad, c.fecha_vencimiento
+        FROM usuarios u
+        LEFT JOIN conductores c ON u.id_usuario = c.id_usuario
+        WHERE u.id_usuario = $1
+      `;
+    } else {
+      query = `SELECT * FROM usuarios WHERE id_usuario = $1`;
+    }
+
+    const result = await db.query(query, [id_usuario]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error al obtener perfil:', err);
+    res.status(500).json({ error: 'Error interno del servidor al obtener el perfil.' });
+  }
+});
+
 router.put('/perfil', verificarAuth, async (req, res) => {
   const { id_usuario, rol } = req.usuario; // Extraídos del token JWT por el middleware (id_usuario y rol en mayúsculas)
   const { 
