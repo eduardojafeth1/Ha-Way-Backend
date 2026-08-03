@@ -203,6 +203,31 @@ router.post('/ofertas', conductorController.createOferta);
 
 /**
  * @openapi
+ * /conductor/notificaciones/stream:
+ *   get:
+ *     summary: Stream de notificaciones en tiempo real (SSE)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Conexión SSE establecida.
+ */
+router.get('/notificaciones/stream', conductorController.streamNotificaciones);
+
+/**
+ * @openapi
+ * /conductor/solicitudes:
+ *   get:
+ *     summary: Obtener solicitudes de clientes compatibles con los vehículos del conductor autenticado
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de ofertas enviadas.
+ */
+
+/**
+ * @openapi
  * /conductor/ofertas:
  *   get:
  *     summary: Obtener todas las ofertas enviadas por el conductor autenticado
@@ -338,5 +363,53 @@ router.get('/pedidos/:id', conductorController.getPedidoById);
  *         description: Error interno del servidor.
  */
 router.put('/pedidos/:id/estado', conductorController.updatePedidoEstado);
+
+/**
+ * @swagger
+ * /conductor/notificaciones/unread:
+ *   get:
+ *     summary: Obtener conteo de notificaciones no leídas
+ *     tags: [Conductor]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Conteo
+ */
+router.get('/notificaciones/unread', conductorController.getUnreadCount);
+
+/**
+ * @swagger
+ * /conductor/notificaciones:
+ *   get:
+ *     summary: Obtener notificaciones del conductor
+ *     tags: [Conductor]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de notificaciones.
+ */
+router.get('/notificaciones', conductorController.getNotificaciones);
+
+/**
+ * @swagger
+ * /conductor/notificaciones/{id}/leida:
+ *   put:
+ *     summary: Marcar notificación como leída
+ *     tags: [Conductor]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: integer
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Notificación marcada como leída.
+ */
+router.put('/notificaciones/:id/leida', conductorController.marcarNotificacionLeida);
 
 module.exports = router;

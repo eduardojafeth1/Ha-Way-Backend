@@ -135,6 +135,27 @@ router.get('/solicitudes/:id_solicitud/ofertas', clienteController.getOfertasFor
 
 /**
  * @openapi
+ * /cliente/ofertas/{id_oferta}:
+ *   get:
+ *     summary: Obtener detalle de una oferta específica
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id_oferta
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Detalle de la oferta
+ *       404:
+ *         description: Oferta no encontrada
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.get('/ofertas/:id_oferta', clienteController.getOfertaById);
+
+/**
+ * @openapi
  * /cliente/ofertas/{id_oferta}/aceptar:
  *   put:
  *     summary: Aceptar una oferta (genera pedido, genera pago pendiente, rechaza las demás ofertas)
@@ -199,5 +220,261 @@ router.get('/pedidos', clienteController.getPedidos);
  *         description: Error interno del servidor.
  */
 router.get('/pedidos/:id', clienteController.getPedidoById);
+
+/**
+ * @openapi
+ * /cliente/pedidos/{id_pedido}/cancelar:
+ *   put:
+ *     summary: Cancelar un pedido
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id_pedido
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: ID del pedido
+ *     responses:
+ *       200:
+ *         description: Pedido cancelado.
+ */
+router.put('/pedidos/:id_pedido/cancelar', clienteController.cancelarPedido);
+
+/**
+ * @openapi
+ * /cliente/pedidos/{id_pedido}/calificar:
+ *   post:
+ *     summary: Calificar un pedido entregado
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id_pedido
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: ID del pedido
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [puntuacion]
+ *             properties:
+ *               puntuacion:
+ *                 type: integer
+ *                 description: Puntuación del 1 al 5
+ *                 example: 5
+ *               comentario:
+ *                 type: string
+ *                 description: Comentario opcional sobre el pedido
+ *                 example: "Excelente servicio."
+ *     responses:
+ *       201:
+ *         description: Calificación guardada exitosamente.
+ *       400:
+ *         description: Datos inválidos o pedido ya calificado.
+ *       404:
+ *         description: Pedido no encontrado o no pertenece al cliente.
+ */
+router.post('/pedidos/:id_pedido/calificar', clienteController.calificarPedido);
+
+/**
+ * @openapi
+ * /cliente/notificaciones/stream:
+ *   get:
+ *     summary: Stream de notificaciones en tiempo real (SSE)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Conexión SSE establecida.
+ */
+router.get('/notificaciones/stream', clienteController.streamNotificaciones);
+
+/**
+ * @openapi
+ * /cliente/direcciones:
+ *   get:
+ *     summary: Listar todas las direcciones guardadas del cliente
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de direcciones.
+ *       500:
+ *         description: Error interno del servidor.
+ */
+router.get('/direcciones', clienteController.getDirecciones);
+
+/**
+ * @openapi
+ * /cliente/direcciones:
+ *   post:
+ *     summary: Guardar una nueva dirección para el cliente
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [direccion, latitud, longitud]
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 example: Casa de mamá
+ *               direccion:
+ *                 type: string
+ *                 example: Colonia Kennedy
+ *               latitud:
+ *                 type: number
+ *               longitud:
+ *                 type: number
+ *               referencia:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Dirección creada exitosamente.
+ *       400:
+ *         description: Faltan campos obligatorios.
+ *       500:
+ *         description: Error interno del servidor.
+ */
+router.post('/direcciones', clienteController.addDireccion);
+
+/**
+ * @openapi
+ * /cliente/tarjetas:
+ *   get:
+ *     summary: Listar tarjetas guardadas del cliente
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de tarjetas.
+ *       500:
+ *         description: Error interno del servidor.
+ */
+router.get('/tarjetas', clienteController.getTarjetas);
+
+/**
+ * @swagger
+ * /cliente/tarjetas:
+ *   post:
+ *     summary: Guardar una nueva tarjeta
+ *     tags: [Cliente]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [numero_tarjeta, titular]
+ *             properties:
+ *               numero_tarjeta:
+ *                 type: string
+ *               titular:
+ *                 type: string
+ *               marca:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Tarjeta guardada.
+ */
+router.post('/tarjetas', clienteController.addTarjeta);
+
+/**
+ * @swagger
+ * /cliente/tarjetas/{id_tarjeta}:
+ *   delete:
+ *     summary: Eliminar una tarjeta
+ *     tags: [Cliente]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id_tarjeta
+ *         schema:
+ *           type: integer
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Tarjeta eliminada.
+ */
+router.delete('/tarjetas/:id_tarjeta', clienteController.deleteTarjeta);
+
+/**
+ * @swagger
+ * /cliente/tarjetas/{id_tarjeta}/principal:
+ *   put:
+ *     summary: Establecer tarjeta como principal
+ *     tags: [Cliente]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id_tarjeta
+ *         schema:
+ *           type: integer
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Tarjeta establecida como principal.
+ */
+router.put('/tarjetas/:id_tarjeta/principal', clienteController.setDefaultTarjeta);
+
+/**
+ * @swagger
+ * /cliente/notificaciones/unread:
+ *   get:
+ *     summary: Obtener conteo de notificaciones no leídas
+ *     tags: [Cliente]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Conteo
+ */
+router.get('/notificaciones/unread', clienteController.getUnreadCount);
+
+/**
+ * @swagger
+ * /cliente/notificaciones:
+ *   get:
+ *     summary: Obtener notificaciones del cliente
+ *     tags: [Cliente]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de notificaciones.
+ */
+router.get('/notificaciones', clienteController.getNotificaciones);
+
+/**
+ * @swagger
+ * /cliente/notificaciones/{id}/leida:
+ *   put:
+ *     summary: Marcar notificación como leída
+ *     tags: [Cliente]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: integer
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Notificación marcada como leída.
+ */
+router.put('/notificaciones/:id/leida', clienteController.marcarNotificacionLeida);
 
 module.exports = router;

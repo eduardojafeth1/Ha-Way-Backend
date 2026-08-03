@@ -36,10 +36,10 @@ exports.getSolicitudesDisponibles = async (req, res) => {
 // 2. Crear una oferta para una solicitud
 exports.createOferta = async (req, res) => {
   const id_usuario = req.usuario.id_usuario;
-  const { id_solicitud, id_camion, precio, tiempo_estimado, distancia, mensaje } = req.body;
+  let { id_solicitud, id_camion, precio, tiempo_estimado, distancia, mensaje } = req.body;
 
-  if (!id_solicitud || !id_camion || !precio || !tiempo_estimado) {
-    return res.status(400).json({ error: 'Los campos id_solicitud, id_camion, precio y tiempo_estimado son obligatorios.' });
+  if (!id_solicitud || !precio || !tiempo_estimado) {
+    return res.status(400).json({ error: 'Los campos id_solicitud, precio y tiempo_estimado son obligatorios.' });
   }
 
   const precioNum = parseFloat(precio);
@@ -59,21 +59,33 @@ exports.createOferta = async (req, res) => {
       return res.status(404).json({ error: 'Perfil de conductor no encontrado.' });
     }
 
-    // Validar que el camión pertenezca al conductor
-    const camionQuery = await db.query(
-      'SELECT id_camion, estado FROM camiones WHERE id_camion = $1 AND id_conductor = $2',
-      [id_camion, id_conductor]
-    );
-    if (camionQuery.rows.length === 0) {
-      return res.status(403).json({ error: 'El camión especificado no te pertenece o no existe.' });
-    }
-    if (camionQuery.rows[0].estado !== 'ACTIVO') {
-      return res.status(400).json({ error: 'El camión no se encuentra activo.' });
+    // Si no mandan id_camion, buscar el primer camión activo del conductor
+    if (!id_camion) {
+      const defaultCamion = await db.query(
+        "SELECT id_camion FROM camiones WHERE id_conductor = $1 AND estado = 'ACTIVO' LIMIT 1",
+        [id_conductor]
+      );
+      if (defaultCamion.rows.length === 0) {
+        return res.status(400).json({ error: 'No tienes un camión activo disponible para realizar entregas.' });
+      }
+      id_camion = defaultCamion.rows[0].id_camion;
+    } else {
+      // Validar que el camión proporcionado pertenezca al conductor
+      const camionQuery = await db.query(
+        'SELECT id_camion, estado FROM camiones WHERE id_camion = $1 AND id_conductor = $2',
+        [id_camion, id_conductor]
+      );
+      if (camionQuery.rows.length === 0) {
+        return res.status(403).json({ error: 'El camión especificado no te pertenece o no existe.' });
+      }
+      if (camionQuery.rows[0].estado !== 'ACTIVO') {
+        return res.status(400).json({ error: 'El camión no se encuentra activo.' });
+      }
     }
 
     // Validar estado de la solicitud
     const solQuery = await db.query(
-      'SELECT estado FROM solicitudes WHERE id_solicitud = $1',
+      'SELECT estado, id_cliente FROM solicitudes WHERE id_solicitud = $1',
       [id_solicitud]
     );
     if (solQuery.rows.length === 0) {
@@ -121,6 +133,17 @@ exports.createOferta = async (req, res) => {
     }
 
     await db.query('COMMIT');
+
+    // Notificar al cliente
+    const { enviarNotificacion } = require('../utils/notificaciones');
+    await enviarNotificacion(
+      solicitud.id_cliente,
+      'Nueva oferta recibida',
+      `Un conductor ha ofrecido L ${precioNum} por tu solicitud de agua.`,
+      'NUEVA_OFERTA',
+      id_solicitud
+    );
+
     res.status(201).json({
       message: 'Oferta enviada exitosamente.',
       oferta: result.rows[0]
@@ -328,7 +351,7 @@ exports.updatePedidoEstado = async (req, res) => {
 
     // Obtener pedido actual y validar pertenencia
     const pedQuery = `
-      SELECT p.*, o.id_conductor, s.id_solicitud
+      SELECT p.*, o.id_conductor, s.id_solicitud, s.id_cliente
       FROM pedidos p
       JOIN ofertas o ON p.id_oferta = o.id_oferta
       JOIN solicitudes s ON p.id_solicitud = s.id_solicitud
@@ -438,8 +461,18 @@ exports.updatePedidoEstado = async (req, res) => {
 
     await db.query('COMMIT');
 
+    // Notificar al cliente
+    const { enviarNotificacion } = require('../utils/notificaciones');
+    await enviarNotificacion(
+      pedido.id_cliente,
+      'Actualización de pedido',
+      `Tu pedido #${pedido.id_pedido} ahora está: ${estadoUpper}.`,
+      'CAMBIO_ESTADO',
+      pedido.id_pedido
+    );
+
     res.json({
-      message: `Pedido actualizado a ${estadoUpper} exitosamente.`,
+      message: `El pedido ha sido actualizado al estado: ${estadoUpper}`,
       pedido: updatedPedido
     });
 
@@ -664,5 +697,83 @@ exports.registrarConductor = async (req, res) => {
     }
     
     res.status(500).json({ error: dbError.message || errorMessage });
+  }
+};
+
+// Stream de notificaciones (SSE)
+exports.streamNotificaciones = (req, res) => {
+  const id_usuario = req.usuario.id_usuario;
+  
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+  
+  res.write(': connected\n\n');
+
+  const notificationEmitter = require('../utils/notificationEmitter');
+
+  const listener = (notificacion) => {
+    if (notificacion.id_usuario === id_usuario) {
+      res.write(`data: ${JSON.stringify(notificacion)}\n\n`);
+    }
+  };
+
+  notificationEmitter.on('nueva_notificacion', listener);
+
+  req.on('close', () => {
+    notificationEmitter.off('nueva_notificacion', listener);
+  });
+};
+
+// 12. Obtener notificaciones del conductor
+exports.getUnreadCount = async (req, res) => {
+  const id_usuario = req.usuario.id_usuario;
+  try {
+    const result = await db.query(
+      'SELECT COUNT(*) FROM notificaciones WHERE id_usuario = $1 AND leida = false',
+      [id_usuario]
+    );
+    res.json({ unread: parseInt(result.rows[0].count, 10) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener conteo de notificaciones.' });
+  }
+};
+
+// 13. Obtener notificaciones del conductor
+exports.getNotificaciones = async (req, res) => {
+  const id_usuario = req.usuario.id_usuario;
+
+  try {
+    const result = await db.query(
+      'SELECT * FROM notificaciones WHERE id_usuario = $1 ORDER BY fecha DESC LIMIT 50',
+      [id_usuario]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener notificaciones.' });
+  }
+};
+
+// 13. Marcar notificación como leída (Conductor)
+exports.marcarNotificacionLeida = async (req, res) => {
+  const id_usuario = req.usuario.id_usuario;
+  const { id } = req.params;
+
+  try {
+    const result = await db.query(
+      'UPDATE notificaciones SET leida = true WHERE id_notificacion = $1 AND id_usuario = $2 RETURNING *',
+      [id, id_usuario]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notificación no encontrada o no te pertenece.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al marcar notificación.' });
   }
 };
