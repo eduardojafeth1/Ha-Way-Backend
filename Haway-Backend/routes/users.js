@@ -61,9 +61,11 @@ router.get('/perfil', verificarAuth, async (req, res) => {
     } else if (rolUpper === 'CONDUCTOR') {
       query = `
         SELECT u.id_usuario, u.rol, u.nombre, u.apellido, u.correo, u.telefono, u.foto, u.estado,
-               c.numero_licencia, c.identidad, c.fecha_vencimiento
+               c.numero_licencia, c.identidad, c.fecha_vencimiento,
+               cam.foto as foto_camion
         FROM usuarios u
         LEFT JOIN conductores c ON u.id_usuario = c.id_usuario
+        LEFT JOIN camiones cam ON c.id_conductor = cam.id_conductor
         WHERE u.id_usuario = $1
       `;
     } else {
@@ -178,8 +180,72 @@ router.put('/perfil', verificarAuth, async (req, res) => {
 
   } catch (err) {
     await db.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: 'Error al actualizar el perfil. Los datos únicos como el teléfono, la licencia o la identidad ya podrían existir.' });
+    console.error('Error al actualizar perfil:', err);
+    res.status(500).json({ error: 'Error interno del servidor al actualizar el perfil.' });
+  }
+});
+
+const multer = require('multer');
+const { uploadToCloudinary } = require('../utils/cloudinary');
+const uploadCamionRaw = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('foto_camion');
+
+router.put('/perfil/foto_camion', verificarAuth, uploadCamionRaw, async (req, res) => {
+  const { id_usuario, rol } = req.usuario;
+  const rolUpper = rol ? rol.toUpperCase() : '';
+
+  if (rolUpper !== 'CONDUCTOR') {
+    return res.status(403).json({ error: 'Solo los conductores pueden actualizar la foto de camión.' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No se envió ninguna foto.' });
+  }
+
+  try {
+    const camionResult = await db.query(
+      `SELECT cam.id_camion 
+       FROM camiones cam 
+       JOIN conductores c ON cam.id_conductor = c.id_conductor 
+       WHERE c.id_usuario = $1`,
+      [id_usuario]
+    );
+    if (camionResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Camión no encontrado para este conductor.' });
+    }
+    const id_camion = camionResult.rows[0].id_camion;
+
+    const cloudinaryResult = await uploadToCloudinary(req.file.buffer, 'camiones');
+    const fotoUrl = cloudinaryResult.secure_url;
+
+    await db.query('UPDATE camiones SET foto = $1 WHERE id_camion = $2', [fotoUrl, id_camion]);
+
+    res.json({ message: 'Foto del camión actualizada correctamente.', foto_camion: fotoUrl });
+  } catch (err) {
+    console.error('Error al actualizar foto de camión:', err);
+    res.status(500).json({ error: 'Error interno del servidor al actualizar la foto del camión.' });
+  }
+});
+
+// Endpoint para foto_perfil
+const uploadPerfilRaw = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('foto_perfil');
+
+router.put('/perfil/foto_perfil', verificarAuth, uploadPerfilRaw, async (req, res) => {
+  const { id_usuario } = req.usuario;
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No se envió ninguna foto de perfil.' });
+  }
+
+  try {
+    const cloudinaryResult = await uploadToCloudinary(req.file.buffer, 'perfiles');
+    const fotoUrl = cloudinaryResult.secure_url;
+
+    await db.query('UPDATE usuarios SET foto = $1 WHERE id_usuario = $2', [fotoUrl, id_usuario]);
+
+    res.json({ message: 'Foto de perfil actualizada correctamente.', foto_perfil: fotoUrl });
+  } catch (err) {
+    console.error('Error al actualizar foto de perfil:', err);
+    res.status(500).json({ error: 'Error interno del servidor al actualizar la foto de perfil.' });
   }
 });
 
