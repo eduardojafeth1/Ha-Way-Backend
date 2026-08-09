@@ -524,7 +524,21 @@ exports.calificarPedido = async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, 'CLIENTE_A_CONDUCTOR')
       RETURNING *;
     `;
-    const result = await db.query(insertQuery, [id_pedido, id_cliente, pedido.id_conductor, comentario || '']);
+    const result = await db.query(insertQuery, [id_pedido, id_cliente, pedido.id_conductor, puntuacion, comentario || '']);
+
+    // 3. Actualizar el promedio del conductor
+    const avgQuery = `
+      SELECT ROUND(AVG(puntuacion), 2) as nuevo_promedio
+      FROM calificaciones
+      WHERE id_conductor = $1 AND tipo = 'CLIENTE_A_CONDUCTOR'
+    `;
+    const avgResult = await db.query(avgQuery, [pedido.id_conductor]);
+    const nuevoPromedio = avgResult.rows[0].nuevo_promedio;
+
+    await db.query(
+      `UPDATE conductores SET calificacion = $1 WHERE id_conductor = $2`,
+      [nuevoPromedio, pedido.id_conductor]
+    );
 
     res.status(201).json({
       message: 'Calificación enviada exitosamente.',
