@@ -314,7 +314,8 @@ exports.aceptarOferta = async (req, res) => {
         condQuery.rows[0].id_usuario,
         'Oferta aceptada',
         `Tu oferta para la solicitud #${oferta.id_solicitud} ha sido aceptada. Tienes un nuevo pedido.`,
-        'OFERTA_ACEPTADA'
+        'OFERTA_ACEPTADA',
+        nuevoPedido.id_pedido
       );
     }
 

@@ -189,6 +189,39 @@ const multer = require('multer');
 const { uploadToCloudinary } = require('../utils/cloudinary');
 const uploadCamionRaw = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('foto_camion');
 
+/**
+ * @openapi
+ * /users/perfil/foto_camion:
+ *   put:
+ *     summary: Actualizar la foto del camión del conductor (Solo Conductor)
+ *     tags: [Usuarios]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - foto_camion
+ *             properties:
+ *               foto_camion:
+ *                 type: string
+ *                 format: binary
+ *                 description: Nueva foto del camión
+ *     responses:
+ *       200:
+ *         description: Foto del camión actualizada correctamente.
+ *       400:
+ *         description: No se envió ninguna foto.
+ *       403:
+ *         description: Solo los conductores pueden actualizar la foto del camión.
+ *       404:
+ *         description: Camión no encontrado.
+ *       500:
+ *         description: Error interno del servidor.
+ */
 router.put('/perfil/foto_camion', verificarAuth, uploadCamionRaw, async (req, res) => {
   const { id_usuario, rol } = req.usuario;
   const rolUpper = rol ? rol.toUpperCase() : '';
@@ -229,6 +262,35 @@ router.put('/perfil/foto_camion', verificarAuth, uploadCamionRaw, async (req, re
 // Endpoint para foto_perfil
 const uploadPerfilRaw = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('foto_perfil');
 
+/**
+ * @openapi
+ * /users/perfil/foto_perfil:
+ *   put:
+ *     summary: Actualizar la foto de perfil del usuario (Cliente o Conductor)
+ *     tags: [Usuarios]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - foto_perfil
+ *             properties:
+ *               foto_perfil:
+ *                 type: string
+ *                 format: binary
+ *                 description: Nueva foto de perfil
+ *     responses:
+ *       200:
+ *         description: Foto de perfil actualizada correctamente.
+ *       400:
+ *         description: No se envió ninguna foto.
+ *       500:
+ *         description: Error interno del servidor.
+ */
 router.put('/perfil/foto_perfil', verificarAuth, uploadPerfilRaw, async (req, res) => {
   const { id_usuario } = req.usuario;
 

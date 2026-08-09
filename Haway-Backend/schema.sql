@@ -70,10 +70,10 @@ CREATE TABLE "notificaciones" (
 	"id_usuario" integer NOT NULL,
 	"titulo" varchar(120) NOT NULL,
 	"mensaje" varchar(300) NOT NULL,
-	"tipo" varchar(20) DEFAULT 'SISTEMA',
+	"tipo" varchar(30) DEFAULT 'SISTEMA',
 	"leida" boolean DEFAULT false,
 	"fecha" timestamp DEFAULT CURRENT_TIMESTAMP,
-	CONSTRAINT "ck_tiponotificacion" CHECK (((tipo)::text = ANY ((ARRAY['PEDIDO'::character varying, 'OFERTA'::character varying, 'PAGO'::character varying, 'SISTEMA'::character varying])::text[])))
+	"id_referencia" integer
 );
 CREATE TABLE "ofertas" (
 	"id_oferta" serial PRIMARY KEY,
